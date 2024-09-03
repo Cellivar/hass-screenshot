@@ -7,6 +7,7 @@ const fsExtra = require("fs-extra");
 const puppeteer = require("puppeteer");
 const { CronJob } = require("cron");
 const gm = require("gm");
+const retry = require('async-retry');
 
 // Overwriting
 console.logReal = console.log;
@@ -52,6 +53,7 @@ var mqttClient = {};
     args: [
       "--disable-dev-shm-usage",
       "--no-sandbox",
+      "--disable-gpu",
       `--lang=${config.language}`,
       config.ignoreCertificateErrors && "--ignore-certificate-errors"
     ].filter((x) => x),
@@ -104,10 +106,10 @@ var mqttClient = {};
     // Parse the request
     console.log(`received request from ${request.connection.remoteAddress} for ${request.url}`);
 
-    // support to kill the process
-    if (request.url == '/exit') {
-        process.exit(1);
-        return;
+    // Health check to make sure NodeJS can respond at least.
+    if (request.url === '/health') {
+      response.writeHead(204);
+      return;
     }
 
     const url = new URL(request.url, `http://${request.headers.host}`);
@@ -174,7 +176,12 @@ var mqttClient = {};
 
 async function mqttConnect() {
   console.log(`Attempting to connect to mqtt://${config.mqttServer}`);
-  mqttClient = mqtt.connect(`mqtt://${config.mqttServer}`,{clientId:"hass-screenshot", username: config.mqttUser, password: config.mqttPassword});
+  const conf = {
+    clientId: config.mqttClient,
+    username: config.mqttUser,
+    password: config.mqttPassword
+  }
+  mqttClient = mqtt.connect(`mqtt://${config.mqttServer}`,conf);
   mqttClient.on("connect",function(connack){
     console.log("MQTT Connected!");
   });
@@ -207,7 +214,7 @@ async function mqttSendState(state) {
     value_template: "{{ value_json.battery_level }}",
     json_attributes_topic: stateTopic,
     json_attributes_template: "{{ value_json | tojson }}",
-    expire_after: 60*60, // 1hr in seconds 
+    expire_after: 60*60, // 1hr in seconds
   };
 
   if (state.mac_address) {
@@ -304,15 +311,20 @@ async function renderAndConvertPageAsync(browser, pageConfig) {
 
   const tempPath = outputPath + ".temp";
 
-  console.log(`Rendering ${url} to image...`);
+  await retry(async () => {
 
-  try {
-    await renderUrlToImageAsync(browser, pageConfig, url, tempPath);
-  } catch (e) {
-    console.error(`Failed to render ${url}`);
-    console.error(`Error: ${e}`);
-    return
-  }
+    console.log(`Rendering ${url} to image...`);
+
+    try {
+      await renderUrlToImageAsync(browser, pageConfig, url, tempPath);
+    } catch (e) {
+      console.error(`Failed to render ${url}`);
+      console.error(`Error: ${e}`);
+      throw e;
+    }
+  }, {
+    retries: 3
+  })
 
   console.log(`Converting rendered screenshot of ${url} to grayscale png...`);
   await convertImageToCompatiblePngAsync(
@@ -321,7 +333,11 @@ async function renderAndConvertPageAsync(browser, pageConfig) {
     outputPath
   );
 
-  fs.unlink(tempPath);
+  const exists = await fs.access(tempPath).then(() => true).catch(() => false);
+  if (exists) {
+    fs.unlink(tempPath);
+  }
+
   console.log(`Finished ${url}`);
   pageCacheTimes[pageConfig.screenShotUrl] = new Date();
 }
@@ -372,9 +388,6 @@ async function renderUrlToImageAsync(browser, pageConfig, url, path) {
         }`
     });
 
-    if (pageConfig.renderingDelay > 0) {
-      await page.waitForTimeout(pageConfig.renderingDelay);
-    }
     await page.screenshot({
       path,
       type: "png",

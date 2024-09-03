@@ -50,6 +50,7 @@ module.exports = {
   realTime: process.env.REAL_TIME === "true",
   ignoreCertificateErrors:
     process.env.UNSAFE_IGNORE_CERTIFICATE_ERRORS === "true",
+  mqttClient: process.env.MQTT_CLIENT || "hass-screenshot",
   mqttServer: process.env.MQTT_SERVER || null,
   mqttUser: process.env.MQTT_USERNAME || null,
   mqttPassword: process.env.MQTT_PASSWORD || null,

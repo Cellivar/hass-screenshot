@@ -3,7 +3,7 @@ variable "registry" {
 }
 
 variable "hass-screenshot-tag" {
-  default = "1.0.5"
+  default = "1.0.6"
 }
 
 target "hass-screenshot" {

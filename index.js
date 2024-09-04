@@ -109,6 +109,7 @@ var mqttClient = {};
     // Health check to make sure NodeJS can respond at least.
     if (request.url === '/health') {
       response.writeHead(204);
+      response.end();
       return;
     }
 

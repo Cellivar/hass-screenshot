@@ -1,9 +1,9 @@
 variable "registry" {
-  default = "docker.squeak.house"
+  default = "zotoci.squeak.house"
 }
 
 variable "hass-screenshot-tag" {
-  default = "1.0.6"
+  default = "1.0.7"
 }
 
 target "hass-screenshot" {
